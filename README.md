@@ -78,6 +78,18 @@ You need `ffmpeg` available in your system PATH.
 - Add that folder to your **System PATH** environment variable
 - Restart your terminal or VSCode
 
+## 💡 Tips & tracking behavior
+
+- The script uses `.txt` files under `data/` to **track downloaded content**.
+- Do **not** manually edit these files unless you know what you're doing.
+- If you delete `downloaded_audio.txt` or `downloaded_video.txt`, the script will **redownload everything** in that mode.
+- If you delete `liked_ids.txt` or `liked_urls.txt`, the script will **re-extract** the list (requires valid `cookies.txt`).
+- `failed.txt` is optional and can be deleted at any time.
+
+Recommended cleanup:
+- Delete `data/liked_*.txt` only if you want to re-fetch your current likes from YouTube (with valid cookies).
+- Do **not** delete the `downloaded_*.txt` unless you want to force re-downloads.
+
 ## ⚠️ Legal notice
 
 This tool is provided for **personal use only**. Downloading content from YouTube may violate their [Terms of Service](https://www.youtube.com/t/terms).  
