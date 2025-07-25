@@ -6,3 +6,6 @@ output/
 
 #Cookies
 cookies.txt
+
+# VS Code local config
+.vscode/
