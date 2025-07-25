@@ -1,105 +1,134 @@
-import subprocess
-import sys
 import os
+import sys
+import subprocess
 import argparse
 from pathlib import Path
+import shutil
 
-LIKED_PLAYLIST_URL = "https://www.youtube.com/playlist?list=LL"
-COOKIES_FILE = "cookies.txt"
-OUTPUT_DIR = Path("output")
+BASE_DIR = Path(__file__).parent.resolve()
+OUTPUT_DIR = BASE_DIR / "output"
 AUDIO_DIR = OUTPUT_DIR / "audio"
 VIDEO_DIR = OUTPUT_DIR / "video"
-URLS_FILE = Path("liked_urls.txt")
-FAILED_FILE = Path("failed.txt")
-DOWNLOADED_AUDIO_FILE = Path("downloaded_audio.txt")
-DOWNLOADED_VIDEO_FILE = Path("downloaded_video.txt")
+DATA_DIR = BASE_DIR / "data"
 
+LIKED_IDS_FILE = DATA_DIR / "liked_ids.txt"
+LIKED_URLS_FILE = DATA_DIR / "liked_urls.txt"
+FAILED_FILE = DATA_DIR / "failed.txt"
+DOWNLOADED_AUDIO_FILE = DATA_DIR / "downloaded_audio.txt"
+DOWNLOADED_VIDEO_FILE = DATA_DIR / "downloaded_video.txt"
+
+def ensure_directories():
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+def check_requirements(mp3: bool):
+    if not Path("cookies.txt").exists():
+        print("❌ Missing cookies.txt. Export your YouTube cookies and place them in the script folder.")
+        sys.exit(1)
+
+    if shutil.which("yt-dlp") is None:
+        print("❌ yt-dlp not found. Install it with: pip install yt-dlp")
+        sys.exit(1)
+
+    if mp3 and shutil.which("ffmpeg") is None:
+        print("⚠️  WARNING: ffmpeg not found. Audio extraction may not work properly.")
 
 def extract_video_ids():
     print("📥 Extracting video IDs from your liked playlist...")
-
     command = [
         sys.executable, "-m", "yt_dlp",
         "--flat-playlist",
-        "--cookies", COOKIES_FILE,
+        "--cookies", "cookies.txt",
         "--print", "%(id)s",
-        LIKED_PLAYLIST_URL
+        "https://www.youtube.com/playlist?list=LL"
     ]
-
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
-        ids = result.stdout.strip().splitlines()
-        return ids
     except subprocess.CalledProcessError as e:
-        print("❌ Error extracting video IDs. Are your cookies expired?")
-        print(e.stderr)
-        return []
+        print("❌ Failed to extract video IDs.")
+        print(e.stderr.strip())
+        sys.exit(1)
 
+    video_ids = result.stdout.strip().splitlines()
+    if not video_ids:
+        print("❌ No videos found. Check if your cookies are valid.")
+        sys.exit(1)
 
-def download(urls, audio_only):
-    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+    LIKED_IDS_FILE.write_text("\n".join(video_ids), encoding="utf-8")
+    return video_ids
 
-    downloaded_file = DOWNLOADED_AUDIO_FILE if audio_only else DOWNLOADED_VIDEO_FILE
-    downloaded_set = set()
-    if downloaded_file.exists():
-        downloaded_set = set(downloaded_file.read_text().splitlines())
+def generate_video_urls(video_ids):
+    urls = [f"https://www.youtube.com/watch?v={vid}" for vid in video_ids]
+    LIKED_URLS_FILE.write_text("\n".join(urls), encoding="utf-8")
+    print("🔗 Generating video URLs...")
+    print("✅ Video URLs saved to", LIKED_URLS_FILE)
+    return urls
 
-    urls_to_download = [url for url in urls if url not in downloaded_set]
-    if not urls_to_download:
-        print("✅ All videos already downloaded.")
-        return
+def load_downloaded(file):
+    return set(file.read_text(encoding="utf-8").splitlines()) if file.exists() else set()
 
-    print(f"⬇️ {len(urls_to_download)} videos to download...")
+def save_downloaded(file, video_id):
+    with file.open("a", encoding="utf-8") as f:
+        f.write(f"{video_id}\n")
 
-    output_template = str((AUDIO_DIR if audio_only else VIDEO_DIR) / "%(title).200s.%(ext)s")
+def save_failed(url):
+    with FAILED_FILE.open("a", encoding="utf-8") as f:
+        f.write(f"{url}\n")
 
-    for url in urls_to_download:
-        cmd = [
+def download(urls, mp3=False):
+    downloaded_audio = load_downloaded(DOWNLOADED_AUDIO_FILE)
+    downloaded_video = load_downloaded(DOWNLOADED_VIDEO_FILE)
+
+    for url in urls:
+        video_id = url.split("=")[-1]
+        if mp3 and video_id in downloaded_audio:
+            continue
+        if not mp3 and video_id in downloaded_video:
+            continue
+
+        output_template = AUDIO_DIR / "%(title).200s.%(ext)s" if mp3 else VIDEO_DIR / "%(title).200s.%(ext)s"
+        command = [
             sys.executable, "-m", "yt_dlp",
-            "--no-playlist",
-            "-o", output_template,
+            "--cookies", "cookies.txt",
+            "-o", str(output_template),
             url
         ]
-
-        if audio_only:
-            cmd += ["-x", "--audio-format", "mp3", "--audio-quality", "0"]
+        if mp3:
+            command += ["-x", "--audio-format", "mp3"]
 
         try:
-            subprocess.run(cmd, check=True)
-            downloaded_set.add(url)
-            downloaded_file.write_text('\n'.join(downloaded_set))
+            subprocess.run(command, check=True)
+            if mp3:
+                save_downloaded(DOWNLOADED_AUDIO_FILE, video_id)
+            else:
+                save_downloaded(DOWNLOADED_VIDEO_FILE, video_id)
         except subprocess.CalledProcessError:
-            with FAILED_FILE.open("a") as f:
-                f.write(url + "\n")
-
-    print("✅ Download complete.")
-
+            save_failed(url)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mp3", action="store_true", help="Download audio only as MP3")
-    parser.add_argument("--no-prompt", action="store_true", help="Download immediately without prompt")
+    parser.add_argument("--download", action="store_true", help="Download now after extracting")
     args = parser.parse_args()
 
+    ensure_directories()
+    check_requirements(mp3=args.mp3)
     video_ids = extract_video_ids()
-    if not video_ids:
-        print("❌ No video IDs extracted.")
-        return
+    urls = generate_video_urls(video_ids)
 
-    urls = [f"https://www.youtube.com/watch?v={vid}" for vid in video_ids]
-    URLS_FILE.write_text('\n'.join(urls))
-    print(f"🔗 {len(urls)} video URLs saved to {URLS_FILE}")
-
-    if args.no_prompt:
-        download(urls, args.mp3)
+    if args.download:
+        print("📦 Downloading...")
+        download(urls, mp3=args.mp3)
+        print("✅ Download complete.")
     else:
-        choice = input("⬇️ Do you want to download the videos now? (y/n): ").strip().lower()
-        if choice == "y":
-            download(urls, args.mp3)
+        print("⬇️  Do you want to download the videos now? (y/n):", end=" ")
+        if input().strip().lower() == "y":
+            print("📦 Downloading...")
+            download(urls, mp3=args.mp3)
+            print("✅ Download complete.")
         else:
-            print("👌 Download skipped. You can run the script later using the saved URLs.")
-
+            print("👌 Download skipped. You can run the script later using", LIKED_URLS_FILE)
 
 if __name__ == "__main__":
     main()
