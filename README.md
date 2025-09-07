@@ -22,6 +22,13 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+## 🛠️ yt-dlp version requirement
+
+YouTube changes often break older `yt-dlp` builds.  
+This project requires **yt-dlp >= 2025.9.7.655.dev0**, which fixes the error:
+
+> "The following content is not available on this app"
+
 ## 📥 Export your YouTube cookies
 
 1. Install the browser extension:  

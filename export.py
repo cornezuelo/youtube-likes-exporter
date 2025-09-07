@@ -38,6 +38,7 @@ def extract_video_ids():
     print("📥 Extracting video IDs from your liked playlist...")
     command = [
         sys.executable, "-m", "yt_dlp",
+        "--extractor-args", "youtube:player_client=web",
         "--flat-playlist",
         "--cookies", "cookies.txt",
         "--print", "%(id)s",
@@ -90,6 +91,7 @@ def download(urls, mp3=False):
         output_template = AUDIO_DIR / "%(title).200s.%(ext)s" if mp3 else VIDEO_DIR / "%(title).200s.%(ext)s"
         command = [
             sys.executable, "-m", "yt_dlp",
+            "--extractor-args", "youtube:player_client=web",
             "--cookies", "cookies.txt",
             "-o", str(output_template),
             url
